@@ -85,8 +85,22 @@ register_cluster "dev" "development"
 register_cluster "staging" "staging"
 success "Environments successfully linked."
 
+
 # ==============================================================================
-# 5. CREDENTIALS & ACCESS
+# 5. DEPLOY ROOT APPLICATION SET (THE SEED)
+# ==============================================================================
+header "Planting the GitOps Seed"
+if [ -f "bootstrap/root-appset.yaml" ]; then
+    info "Applying root-appset.yaml to Management Cluster..."
+    kubectl apply -f bootstrap/root-appset.yaml --context kind-mgmt > /dev/null 2>&1
+    success "ApplicationSet deployed! Argo CD is now watching Git."
+else
+    error "bootstrap/root-appset.yaml not found! Check your folder structure."
+fi
+
+
+# ==============================================================================
+# 6. CREDENTIALS & ACCESS
 # ==============================================================================
 ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
 
