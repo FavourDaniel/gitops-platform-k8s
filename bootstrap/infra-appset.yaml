@@ -33,3 +33,4 @@ spec:
           - ServerSideApply=true          # Handles large Prometheus CRDs
           - Validate=false               # Bypasses "Resource not found" race condition
           - SkipDryRunOnMissingResource=true # Prevents pre-sync validation failures
+          - Replace=true
