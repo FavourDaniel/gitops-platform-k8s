@@ -8,13 +8,11 @@ spec:
   generators:
     - matrix:
         generators:
-          # 1. THE APP GENERATOR: Finds folders in apps/
           - git:
-              repoURL: '{{ .common.repository.url }}' # NO HARDCODING
+              repoURL: '{{ .common.repository.url }}'
               revision: '{{ .common.repository.revision }}'
               directories:
                 - path: apps/*
-          # 2. THE CLUSTER GENERATOR
           - clusters:
               selector:
                 matchLabels:

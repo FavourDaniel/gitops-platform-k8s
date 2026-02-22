@@ -185,13 +185,13 @@ success "Repository trusted."
 # ==============================================================================
 header "Planting the GitOps Seeds"
 
-# Best Practice: Loop through the bootstrap folder to apply all AppSets
 if [ -d "bootstrap" ]; then
     for appset in bootstrap/*.yaml; do
         if [ -f "$appset" ]; then
-            # THE FIX: Force delete the appset first to avoid "Invalid Value" patch errors 
-            # when switching to goTemplate: true
-            local appset_name=$(basename "$appset" .yaml)
+            # REMOVED 'local' because we aren't inside a function
+            appset_name=$(basename "$appset" .yaml)
+            
+            # Wipe old appsets to prevent "Invalid Value" schema conflicts
             kubectl delete appset "$appset_name" -n argocd --context kind-mgmt > /dev/null 2>&1 || true
             
             info "Applying $(basename "$appset") to Management Cluster..."
