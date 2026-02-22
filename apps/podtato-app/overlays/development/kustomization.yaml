@@ -6,12 +6,11 @@ kind: Kustomization
 commonLabels:
   env: development
 
-# 2. Tell Kustomize to render the Helm chart located in the base/ folder
 helmCharts:
-  - name: podtato-app       # Must match the 'name' inside base/Chart.yaml
-    path: ../../base        # Relative path to your Helm chart directory
+  - name: podtato-head          # The official name of the chart
+    repo: https://podtato-head.github.io/podtato-head-helm/  # The remote registry URL
+    version: 0.3.0              # Pinning the exact version (Best Practice!)
     releaseName: dev-podtato
-    namespace: podtato-app  # The target namespace for deployment
-    valuesInline:           # Override your Helm values.yaml specifically for DEV!
+    namespace: podtato-app
+    valuesInline:
       replicaCount: 1
-      environment: dev

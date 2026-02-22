@@ -6,10 +6,10 @@ commonLabels:
   env: staging
 
 helmCharts:
-  - name: podtato-app
-    path: ../../base
+  - name: podtato-head
+    repo: https://podtato-head.github.io/podtato-head-helm/
+    version: 0.3.0
     releaseName: staging-podtato
     namespace: podtato-app
-    valuesInline:           # Override values for STAGING!
-      replicaCount: 3       # Staging gets high availability (3 pods)
-      environment: staging
+    valuesInline:
+      replicaCount: 3           # Staging gets 3 replicas
