@@ -183,13 +183,19 @@ success "Repository trusted."
 # ================================================
 # 5. DEPLOY ROOT APPLICATION SET (THE SEED)
 # ==============================================================================
-header "Planting the GitOps Seed"
-if [ -f "bootstrap/root-appset.yaml" ]; then
-    info "Applying root-appset.yaml to Management Cluster..."
-    run_live kubectl apply -f bootstrap/root-appset.yaml --context kind-mgmt
-    success "ApplicationSet deployed! Argo CD is now watching Git."
+header "Planting the GitOps Seeds"
+
+# Best Practice: Loop through the bootstrap folder to apply all AppSets
+if [ -d "bootstrap" ]; then
+    for appset in bootstrap/*.yaml; do
+        if [ -f "$appset" ]; then
+            info "Applying $(basename "$appset") to Management Cluster..."
+            run_live kubectl apply -f "$appset" --context kind-mgmt
+        fi
+    done
+    success "All ApplicationSets deployed! Argo CD is now watching the entire platform."
 else
-    error "bootstrap/root-appset.yaml not found! Check your folder structure."
+    error "bootstrap/ folder not found! Check your folder structure."
 fi
 
 # ==============================================================================
