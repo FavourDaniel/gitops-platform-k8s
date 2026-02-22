@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      env: mgmt
+      tier: infra
+
+helmGlobals:
+  # Since this is a remote OCI chart, we don't need a local chartHome
+  # but we still need the helm configuration enabled in Argo CD
+  chartHome: /tmp
+
+helmCharts:
+  - name: kube-prometheus-stack
+    repo: https://prometheus-community.github.io/helm-charts
+    version: 69.6.0
+    releaseName: prometheus
+    namespace: observability
+    valuesFile: values.yaml

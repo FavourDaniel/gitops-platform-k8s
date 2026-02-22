@@ -1,0 +1,42 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: infra-appset
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - matrix:
+        generators:
+          # 1. Dynamically find the repo URL
+          - scmProvider:
+              github:
+                organization: FavourDaniel
+                repository: gitops-platform-k8s
+          # 2. Look for folders in infrastructure/
+          - git:
+              repoURL: '{{ .repository.url }}'
+              revision: HEAD
+              directories:
+                - path: infrastructure/*
+  template:
+    metadata:
+      name: 'mgmt-{{ .path.basename }}'
+    spec:
+      project: default
+      source:
+        repoURL: '{{ .repository.url }}'
+        targetRevision: HEAD
+        path: '{{ .path.path }}/overlays/mgmt'
+      destination:
+        # Deploying to the Management cluster itself
+        server: https://kubernetes.default.svc
+        namespace: '{{ .path.basename }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true # CRITICAL: Prometheus CRDs are too large for standard apply

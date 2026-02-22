@@ -1,0 +1,21 @@
+---
+# Environment-specific overrides for Management Cluster
+grafana:
+  adminPassword: admin
+  ingress:
+    enabled: false # We will use port-forwarding for now
+
+prometheus:
+  prometheusSpec:
+    retention: 1d
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        cpu: 500m
+        memory: 800Mi
+
+# Disable components we don't need for a local lab to save RAM
+alertmanager:
+  enabled: false
