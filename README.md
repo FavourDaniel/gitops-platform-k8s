@@ -1,0 +1,3 @@
+
+remove handing processes
+kill -9 $(lsof -ti :8080)

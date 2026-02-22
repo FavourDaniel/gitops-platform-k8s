@@ -23,20 +23,13 @@ header() { echo -e "\n${BOLD}==> $1${NC}"; }
 # Runs a command, showing its output in grey on a single refreshing line
 run_live() {
     "$@" 2>&1 | while IFS= read -r line || [ -n "$line" ]; do
-        # Get terminal width so long lines don't wrap and break the UI
         local width=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
         local truncated=${line:0:$((width - 5))}
-        
-        # \r moves to start of line, \033[K clears the line
         printf "\r\033[K${DIM}  > %s${NC}" "$truncated"
     done
-    
-    # Capture the exit code of the actual command, not the while loop
+
     local exit_code=${PIPESTATUS[0]}
-    
-    # Clear the transient line completely when done
     printf "\r\033[K"
-    
     return $exit_code
 }
 
@@ -47,7 +40,7 @@ cd "$(dirname "$0")/.."
 # 1. PRE-FLIGHT CHECKS
 # ==============================================================================
 header "System Checks"
-for tool in kind kubectl argocd docker; do
+for tool in kind kubectl argocd docker jq; do
     if ! command -v $tool &> /dev/null; then
         error "$tool is not installed. Please install it first."
     fi
@@ -85,40 +78,87 @@ else
     info "Downloading and applying Argo CD manifests..."
     kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - > /dev/null 2>&1
     run_live kubectl apply --server-side=true --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
-    info "Waiting for Argo CD components to initialize..."
-    run_live kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
 fi
+
+# THE FIX: Always wait for Argo CD to be ready, whether newly installed or pre-existing!
+info "Waiting for Argo CD components to be fully ready..."
+run_live kubectl wait --for=condition=available --timeout=300s deployment --all -n argocd
+
 success "Control plane is operational."
 
 # ==============================================================================
 # 4. TARGET CLUSTER REGISTRATION
 # ==============================================================================
 header "Linking Environments"
-run_live argocd login --core
+
+# PRE-SYNC CLEANUP: Remove stale cluster secrets and apps to force a clean state.
+info "Clearing existing cluster metadata for a clean sync..."
+kubectl delete secret -n argocd -l argocd.argoproj.io/secret-type=cluster --context kind-mgmt > /dev/null 2>&1 || true
+
+info "Clearing stale applications to force template regeneration..."
+kubectl delete apps -n argocd --all --context kind-mgmt > /dev/null 2>&1 || true
 
 register_cluster() {
   local cluster_name=$1
-  local context="kind-${cluster_name}"
   local env_label=$2
+  local context="kind-${cluster_name}"
 
-  info "Registering target: $cluster_name (env=$env_label)"
-  # We use the internal Docker DNS name (e.g., dev-control-plane) so Argo CD
-  # can talk to the clusters from inside its own container.
+  # 1. Get the internal Docker IP (for Argo CD to use later)
+  local cluster_ip
+  cluster_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${cluster_name}-control-plane")
+  local internal_server="https://${cluster_ip}:6443"
+
+  info "Registering '$cluster_name' (Host will use local port, Argo CD will use $cluster_ip)"
+
+  # Get the original localhost server URL that kind generated
+  local original_server=$(kubectl config view -o jsonpath="{.clusters[?(@.name=='${context}')].cluster.server}")
+
+  # Ensure we are in the mgmt context so the Argo CLI saves the secret in the right place
+  kubectl config use-context kind-mgmt > /dev/null 2>&1
+
+  # 2. Add the cluster using the default host-accessible kubeconfig
   run_live argocd cluster add "$context" \
+    --core \
+    --upsert \
     --name "$cluster_name" \
     --label "env=$env_label" \
     --label "type=workload" \
-    --server "https://${cluster_name}-control-plane:6443" \
-    --upsert \
+    --system-namespace kube-system \
+    --insecure \
     -y
+
+  # 3. THE FIX: Patch the Argo CD secret to use the internal Docker IP
+  info "Patching cluster secret for internal Docker routing..."
+  
+  # Find the secret Argo CD just created by matching the original localhost server URL
+  local secret_name
+  secret_name=$(kubectl get secret -n argocd -l argocd.argoproj.io/secret-type=cluster -o json | jq -r ".items[] | select(.data.server | @base64d == \"$original_server\") | .metadata.name")
+
+  if [ -n "$secret_name" ]; then
+    # Use stringData to safely patch the server address without dealing with base64 quirks
+    kubectl patch secret "$secret_name" -n argocd -p="{\"stringData\": {\"server\": \"$internal_server\"}}" > /dev/null 2>&1
+    success "Registered '$cluster_name' successfully mapped to $internal_server"
+  else
+    error "Failed to find the Argo CD cluster secret to patch."
+  fi
 }
 
+info "Registering workload clusters..."
 register_cluster "dev" "development"
 register_cluster "staging" "staging"
-success "Environments successfully linked."
 
 # ==============================================================================
+# 4.5 REGISTER SOURCE REPOSITORY (DYNAMIC)
+# ==============================================================================
+header "Securing Git Source"
+REPO_URL=$(git config --get remote.origin.url)
+[ -z "$REPO_URL" ] && error "Could not detect a Git remote. Are you running this inside the repo?"
+
+info "Detected repository: $REPO_URL"
+run_live argocd repo add "$REPO_URL" --core --upsert
+success "Repository trusted."
+
+# ================================================
 # 5. DEPLOY ROOT APPLICATION SET (THE SEED)
 # ==============================================================================
 header "Planting the GitOps Seed"
@@ -133,7 +173,8 @@ fi
 # ==============================================================================
 # 6. CREDENTIALS & ACCESS
 # ==============================================================================
-ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d)
 
 echo -e "\n${BOLD}------------------------------------------------------------${NC}"
 echo -e "${GREEN}✔ GitOps Platform Bootstrap Complete${NC}"
