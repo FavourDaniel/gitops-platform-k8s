@@ -32,7 +32,7 @@ spec:
         repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
         targetRevision: HEAD
         # THE MAGIC: Dynamically map the cluster's environment label to the folder path
-        path: '{{path.path}}/overlays/{{metadata.labels.env}}'
+        path: '{{path}}/overlays/{{metadata.labels.env}}'
       destination:
         server: '{{server}}'
         namespace: '{{path.basename}}'
