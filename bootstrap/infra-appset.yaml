@@ -32,9 +32,9 @@ spec:
         retry:
           limit: 5
           backoff:
-            duration: 30s
+            duration: 60s
             factor: 2
-            maxDuration: 5m
+            maxDuration: 10m
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
