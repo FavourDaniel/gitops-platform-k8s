@@ -6,36 +6,41 @@ metadata:
   name: root-appset
   namespace: argocd
 spec:
+  goTemplate: true # Standard for modern, complex ApplicationSets
   generators:
-    # matrix 'parent' generator
     - matrix:
         generators:
-          # 1. THE APP GENERATOR: Find every folder inside 'apps/'
+          # 1. THE REPO DISCOVERY: Automatically finds your repo URL
+          - scmProvider:
+              github:
+                organization: FavourDaniel
+                repository: gitops-platform-k8s
+          
+          # 2. THE APP GENERATOR: Finds folders in apps/
           - git:
-              repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
+              repoURL: '{{ .repository.url }}'
               revision: HEAD
               directories:
                 - path: apps/*
           
-          # 2. THE CLUSTER GENERATOR: Find every cluster labeled 'type=workload'
+          # 3. THE CLUSTER GENERATOR: Targets your workload clusters
           - clusters:
               selector:
                 matchLabels:
                   type: workload
   template:
     metadata:
-      # Naming convention: e.g., "development-demo-app"
-      name: '{{metadata.labels.env}}-{{path.basename}}'
+      # Using . syntax because goTemplate is enabled
+      name: '{{ .metadata.labels.env }}-{{ .path.basename }}'
     spec:
       project: default
       source:
-        repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
+        repoURL: '{{ .repository.url }}'
         targetRevision: HEAD
-        # THE MAGIC: Dynamically map the cluster's environment label to the folder path
-        path: '{{path}}/overlays/{{metadata.labels.env}}'
+        path: '{{ .path.path }}/overlays/{{ .metadata.labels.env }}'
       destination:
-        server: '{{server}}'
-        namespace: '{{path.basename}}'
+        server: '{{ .server }}'
+        namespace: '{{ .path.basename }}'
       syncPolicy:
         automated:
           prune: true
