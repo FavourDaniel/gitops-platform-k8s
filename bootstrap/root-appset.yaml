@@ -9,8 +9,8 @@ spec:
     - matrix:
         generators:
           - git:
-              repoURL: '{{ .common.repository.url }}'
-              revision: '{{ .common.repository.revision }}'
+              repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
+              revision: HEAD
               directories:
                 - path: apps/*
           - clusters:
@@ -23,8 +23,8 @@ spec:
     spec:
       project: default
       source:
-        repoURL: '{{ .common.repository.url }}'
-        targetRevision: '{{ .common.repository.revision }}'
+        repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
+        targetRevision: HEAD
         path: '{{ .path.path }}/overlays/{{ .metadata.labels.env }}'
       destination:
         server: '{{ .server }}'

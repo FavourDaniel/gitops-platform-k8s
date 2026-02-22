@@ -118,7 +118,7 @@ info "Clearing existing cluster metadata for a clean sync..."
 kubectl delete secret -n argocd -l argocd.argoproj.io/secret-type=cluster --context kind-mgmt > /dev/null 2>&1 || true
 
 info "Clearing stale applications to force template regeneration..."
-run_live kubectl delete apps -n argocd --all --context kind-mgmt > /dev/null 2>&1 || true
+run_live kubectl delete apps -n argocd --all --context kind-mgmt --wait=false
 
 register_cluster() {
   local cluster_name=$1
@@ -192,7 +192,7 @@ if [ -d "bootstrap" ]; then
             appset_name=$(basename "$appset" .yaml)
             
             # Wipe old appsets to prevent "Invalid Value" schema conflicts
-            kubectl delete appset "$appset_name" -n argocd --context kind-mgmt > /dev/null 2>&1 || true
+            kubectl delete appset "$appset_name" -n argocd --context kind-mgmt --wait=false > /dev/null 2>&1 || true
             
             info "Applying $(basename "$appset") to Management Cluster..."
             run_live kubectl apply -f "$appset" --context kind-mgmt
