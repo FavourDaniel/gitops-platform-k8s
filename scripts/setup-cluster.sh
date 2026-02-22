@@ -82,7 +82,29 @@ fi
 
 # THE FIX: Always wait for Argo CD to be ready, whether newly installed or pre-existing!
 info "Waiting for Argo CD components to be fully ready..."
-run_live kubectl wait --for=condition=available --timeout=300s deployment --all -n argocd
+
+# THE FIX: A Self-Healing Watchdog Loop
+# We loop for up to ~5 minutes. If a pod gets stuck in CrashLoopBackOff (due to the 
+# copyutil bug or resource starvation), we automatically delete it to force a clean restart.
+for i in {1..30}; do
+    # Try to wait for 10 seconds. If it succeeds, break out of the loop early!
+    if kubectl wait --for=condition=available --timeout=10s deployment --all -n argocd --context kind-mgmt > /dev/null 2>&1; then
+        break
+    fi
+    
+    # Check if any pods have crashed
+    CRASHED_PODS=$(kubectl get pods -n argocd --context kind-mgmt | grep "CrashLoopBackOff" | awk '{print $1}')
+    
+    if [ -n "$CRASHED_PODS" ]; then
+        warn "Detected crashed Argo CD pods (likely local resource starvation). Auto-healing..."
+        for pod in $CRASHED_PODS; do
+            run_live kubectl delete pod "$pod" -n argocd --context kind-mgmt
+        done
+    fi
+done
+
+# One final strict wait to ensure the progress bar finishes cleanly
+run_live kubectl wait --for=condition=available --timeout=300s deployment --all -n argocd --context kind-mgmt
 
 success "Control plane is operational."
 
