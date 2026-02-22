@@ -2,18 +2,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# These annotations are the "secret sauce" for automated Prometheus deploys
-commonAnnotations:
-  argocd.argoproj.io/sync-options: ServerSideApply=true,Replace=true,Validate=false
-
 labels:
   - pairs:
       env: mgmt
       tier: infra
 
 helmGlobals:
-  # Since this is a remote OCI chart, we don't need a local chartHome
-  # but we still need the helm configuration enabled in Argo CD
   chartHome: /tmp
 
 helmCharts:

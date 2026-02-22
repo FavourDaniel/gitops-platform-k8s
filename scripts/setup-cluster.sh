@@ -117,14 +117,14 @@ header "Linking Environments"
 info "Clearing existing cluster metadata for a clean sync..."
 kubectl delete secret -n argocd -l argocd.argoproj.io/secret-type=cluster --context kind-mgmt > /dev/null 2>&1 || true
 
-info "Clearing stale applications to force template regeneration..."
-run_live kubectl delete apps -n argocd --all --context kind-mgmt --wait=false
+# info "Clearing stale applications to force template regeneration..."
+# run_live kubectl delete apps -n argocd --all --context kind-mgmt --wait=false
 
 
-# Best Practice: Force-remove finalizers if they are hanging
-info "Clearing stale applications..."
-# 1. Trigger the standard delete (non-blocking)
-kubectl delete apps -n argocd --all --context kind-mgmt --wait=false > /dev/null 2>&1 || true
+# # Best Practice: Force-remove finalizers if they are hanging
+# info "Clearing stale applications..."
+# # 1. Trigger the standard delete (non-blocking)
+# kubectl delete apps -n argocd --all --context kind-mgmt --wait=false > /dev/null 2>&1 || true
 
 # 2. Force-remove finalizers to prevent the "application is deleting" hang
 # We use a subshell to avoid formatting characters breaking the command
@@ -209,7 +209,7 @@ info "Detected repository: $REPO_URL"
 run_live argocd repo add "$REPO_URL" --core --upsert
 success "Repository trusted."
 
-# ================================================
+# ==============================================================================
 # 5. DEPLOY ROOT APPLICATION SET (THE SEED)
 # ==============================================================================
 header "Planting the GitOps Seeds"
@@ -217,14 +217,11 @@ header "Planting the GitOps Seeds"
 if [ -d "bootstrap" ]; then
     for appset in bootstrap/*.yaml; do
         if [ -f "$appset" ]; then
-            # REMOVED 'local' because we aren't inside a function
             appset_name=$(basename "$appset" .yaml)
             
-            # Wipe old appsets to prevent "Invalid Value" schema conflicts
-            kubectl delete appset "$appset_name" -n argocd --context kind-mgmt --wait=false > /dev/null 2>&1 || true
-            
             info "Applying $(basename "$appset") to Management Cluster..."
-            run_live kubectl apply -f "$appset" --context kind-mgmt
+            # THE FIX: Use --server-side and --force-conflicts to handle large manifests
+            run_live kubectl apply -f "$appset" --context kind-mgmt --server-side --force-conflicts
         fi
     done
     success "All ApplicationSets deployed! Argo CD is now watching the entire platform."
