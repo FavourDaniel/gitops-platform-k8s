@@ -120,6 +120,23 @@ kubectl delete secret -n argocd -l argocd.argoproj.io/secret-type=cluster --cont
 info "Clearing stale applications to force template regeneration..."
 run_live kubectl delete apps -n argocd --all --context kind-mgmt --wait=false
 
+
+# Best Practice: Force-remove finalizers if they are hanging
+info "Clearing stale applications..."
+# 1. Trigger the standard delete (non-blocking)
+kubectl delete apps -n argocd --all --context kind-mgmt --wait=false > /dev/null 2>&1 || true
+
+# 2. Force-remove finalizers to prevent the "application is deleting" hang
+# We use a subshell to avoid formatting characters breaking the command
+STALE_APPS=$(kubectl get apps -n argocd -o name --context kind-mgmt 2>/dev/null)
+if [ -n "$STALE_APPS" ]; then
+    info "Force-clearing finalizers for stale apps..."
+    echo "$STALE_APPS" | xargs -I {} kubectl patch {} -n argocd --context kind-mgmt --type merge -p '{"metadata":{"finalizers":null}}' > /dev/null 2>&1 || true
+    success "Finalizers cleared."
+fi
+
+
+
 register_cluster() {
   local cluster_name=$1
   local env_label=$2
