@@ -16,6 +16,22 @@ prometheus:
         cpu: 500m
         memory: 800Mi
 
+prometheus-node-exporter:
+  rbac:
+    # This prevents the chart from trying to create the global roles 
+    # that are currently causing your "Already Exists" error.
+    create: true
+
+prometheusOperator:
+  admissionWebhooks:
+    patch:
+      enabled: true
+      force: true  # This is the "Issue 4500" fix
+    rbac:
+      create: true
+    serviceAccount:
+      create: true
+
 # Disable components we don't need for a local lab to save RAM
 alertmanager:
   enabled: false
