@@ -118,7 +118,7 @@ info "Clearing existing cluster metadata for a clean sync..."
 kubectl delete secret -n argocd -l argocd.argoproj.io/secret-type=cluster --context kind-mgmt > /dev/null 2>&1 || true
 
 info "Clearing stale applications to force template regeneration..."
-kubectl delete apps -n argocd --all --context kind-mgmt > /dev/null 2>&1 || true
+run_live kubectl delete apps -n argocd --all --context kind-mgmt > /dev/null 2>&1 || true
 
 register_cluster() {
   local cluster_name=$1
