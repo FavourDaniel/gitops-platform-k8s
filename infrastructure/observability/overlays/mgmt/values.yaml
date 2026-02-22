@@ -24,13 +24,11 @@ prometheus-node-exporter:
 
 prometheusOperator:
   admissionWebhooks:
+    enabled: false
     patch:
-      enabled: true
-      force: true  # This is the "Issue 4500" fix
-    rbac:
-      create: true
-    serviceAccount:
-      create: true
+      enabled: false
+  tls:
+    enabled: false
 
 # Disable components we don't need for a local lab to save RAM
 alertmanager:
