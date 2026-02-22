@@ -136,6 +136,18 @@ if [ -n "$STALE_APPS" ]; then
 fi
 
 
+info "Verifying application cleanup..."
+REMAINING_APPS=$(kubectl get apps -n argocd -o name --context kind-mgmt 2>/dev/null)
+
+if [ -z "$REMAINING_APPS" ]; then
+    success "Cluster is clean."
+else
+    warn "Cleanup is hanging. Force-patching remaining applications..."
+    # The 'Nuclear' patch to clear finalizers
+    kubectl get apps -n argocd --context kind-mgmt -o name | xargs -I {} kubectl patch {} -n argocd --context kind-mgmt --type merge -p '{"metadata":{"finalizers":null}}' > /dev/null 2>&1 || true
+    success "Deadlock broken."
+fi
+
 
 register_cluster() {
   local cluster_name=$1

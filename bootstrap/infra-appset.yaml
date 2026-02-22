@@ -29,6 +29,7 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
-          - ServerSideApply=true
-          - Validate=false
-          - SkipDryRunOnMissingResource=true
+          # THE AUTOMATION GOLDEN TRIO
+          - ServerSideApply=true          # Handles large Prometheus CRDs
+          - Validate=false               # Bypasses "Resource not found" race condition
+          - SkipDryRunOnMissingResource=true # Prevents pre-sync validation failures
