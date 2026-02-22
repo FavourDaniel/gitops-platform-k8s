@@ -8,7 +8,7 @@ labels:
 
 helmCharts:
   - name: podtato-head
-    repo: https://podtato-head.github.io/podtato-head-helm/
+    repo: oci://ghcr.io/podtato-head/charts
     version: 0.3.0
     releaseName: staging-podtato
     namespace: podtato-app

@@ -8,7 +8,7 @@ labels:
 
 helmCharts:
   - name: podtato-head          # The official name of the chart
-    repo: https://podtato-head.github.io/podtato-head-helm/  # The remote registry URL
+    repo: oci://ghcr.io/podtato-head/charts
     version: 0.3.0              # Pinning the exact version (Best Practice!)
     releaseName: dev-podtato
     namespace: podtato-app
