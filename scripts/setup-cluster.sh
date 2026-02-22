@@ -189,6 +189,11 @@ header "Planting the GitOps Seeds"
 if [ -d "bootstrap" ]; then
     for appset in bootstrap/*.yaml; do
         if [ -f "$appset" ]; then
+            # THE FIX: Force delete the appset first to avoid "Invalid Value" patch errors 
+            # when switching to goTemplate: true
+            local appset_name=$(basename "$appset" .yaml)
+            kubectl delete appset "$appset_name" -n argocd --context kind-mgmt > /dev/null 2>&1 || true
+            
             info "Applying $(basename "$appset") to Management Cluster..."
             run_live kubectl apply -f "$appset" --context kind-mgmt
         fi
@@ -197,6 +202,8 @@ if [ -d "bootstrap" ]; then
 else
     error "bootstrap/ folder not found! Check your folder structure."
 fi
+
+
 
 # ==============================================================================
 # 6. CREDENTIALS & ACCESS

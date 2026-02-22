@@ -1,42 +1,32 @@
-# https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-Matrix/
----
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: root-appset
   namespace: argocd
 spec:
-  goTemplate: true # Standard for modern, complex ApplicationSets
+  goTemplate: true
   generators:
     - matrix:
         generators:
-          # 1. THE REPO DISCOVERY: Automatically finds your repo URL
-          - scmProvider:
-              github:
-                organization: FavourDaniel
-                repository: gitops-platform-k8s
-          
-          # 2. THE APP GENERATOR: Finds folders in apps/
+          # 1. THE APP GENERATOR: Finds folders in apps/
           - git:
-              repoURL: '{{ .repository.url }}'
-              revision: HEAD
+              repoURL: '{{ .common.repository.url }}' # NO HARDCODING
+              revision: '{{ .common.repository.revision }}'
               directories:
                 - path: apps/*
-          
-          # 3. THE CLUSTER GENERATOR: Targets your workload clusters
+          # 2. THE CLUSTER GENERATOR
           - clusters:
               selector:
                 matchLabels:
                   type: workload
   template:
     metadata:
-      # Using . syntax because goTemplate is enabled
       name: '{{ .metadata.labels.env }}-{{ .path.basename }}'
     spec:
       project: default
       source:
-        repoURL: '{{ .repository.url }}'
-        targetRevision: HEAD
+        repoURL: '{{ .common.repository.url }}'
+        targetRevision: '{{ .common.repository.revision }}'
         path: '{{ .path.path }}/overlays/{{ .metadata.labels.env }}'
       destination:
         server: '{{ .server }}'
