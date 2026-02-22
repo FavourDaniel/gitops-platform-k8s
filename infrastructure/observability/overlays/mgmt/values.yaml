@@ -1,9 +1,19 @@
 ---
-# Environment-specific overrides for Management Cluster
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+    patch:
+      enabled: false
+  tls:
+    enabled: false
+  # This makes the operator itself wait and verify CRDs exist before starting
+  crds:
+    enabled: true
+
 grafana:
   adminPassword: admin
   ingress:
-    enabled: false # We will use port-forwarding for now
+    enabled: false
 
 prometheus:
   prometheusSpec:
@@ -16,20 +26,5 @@ prometheus:
         cpu: 500m
         memory: 800Mi
 
-prometheus-node-exporter:
-  rbac:
-    # This prevents the chart from trying to create the global roles 
-    # that are currently causing your "Already Exists" error.
-    create: true
-
-prometheusOperator:
-  admissionWebhooks:
-    enabled: false
-    patch:
-      enabled: false
-  tls:
-    enabled: false
-
-# Disable components we don't need for a local lab to save RAM
 alertmanager:
   enabled: false
