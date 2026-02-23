@@ -38,4 +38,6 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
+          - Force=false         # Explicitly disable Force to allow SSA to work
+          - Replace=false
           - SkipDryRunOnMissingResource=true
