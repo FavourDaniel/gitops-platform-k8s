@@ -169,7 +169,41 @@ argocd repo add "$REPO_URL" --core --upsert &>/dev/null
 success "Repository trusted."
 
 # ==============================================================================
-# PHASE 6: SEED THE GITOPS ENGINE (THE ONLY MANUAL APPLY)
+# PHASE 6: PRE-CREATE NAMESPACES AND INJECT BOOTSTRAP SECRETS
+# These secrets must exist BEFORE parent-app.yaml is applied because Argo CD
+# will immediately start syncing Vault, and the init job needs cluster-ips
+# to exist in the vault namespace before its pod can be scheduled.
+#
+# In production: these would be injected by Terraform as part of cluster
+# provisioning, not by a bootstrap script.
+# ==============================================================================
+header "Pre-creating Namespaces and Injecting Bootstrap Secrets"
+
+# Pre-create vault namespace so we can inject the secret before Argo CD does
+kubectl create namespace vault \
+    --dry-run=client -o yaml | \
+    kubectl apply -f - --context kind-mgmt
+
+# Inject spoke cluster IPs so the Vault init job can register Kubernetes auth
+# for each spoke cluster. These IPs are Docker-internal and only valid for kind.
+DEV_IP=$(docker inspect \
+    -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+    "dev-control-plane")
+STAGING_IP=$(docker inspect \
+    -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+    "staging-control-plane")
+
+kubectl create secret generic cluster-ips \
+    --namespace vault \
+    --from-literal=dev-ip="${DEV_IP}" \
+    --from-literal=staging-ip="${STAGING_IP}" \
+    --dry-run=client -o yaml | \
+    kubectl apply -f - --context kind-mgmt
+
+success "Bootstrap secrets injected. Vault init job will find cluster-ips on startup."
+
+# ==============================================================================
+# PHASE 7: SEED THE GITOPS ENGINE (THE ONLY MANUAL APPLY)
 # We apply exactly ONE file. Argo CD discovers everything else from git.
 # This is the "bootstrap paradox" solution — one file to rule them all.
 # ==============================================================================
@@ -184,26 +218,6 @@ kubectl apply -f bootstrap/parent-app.yaml \
     --force-conflicts
 
 success "Platform is now self-managing. Argo CD owns everything from here."
-
-
-# Inject spoke cluster IPs so the Vault config job can register them
-header "Injecting Cluster IPs for Vault Configuration"
-
-DEV_IP=$(docker inspect \
-    -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
-    "dev-control-plane")
-STAGING_IP=$(docker inspect \
-    -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
-    "staging-control-plane")
-
-kubectl create secret generic cluster-ips \
-    --namespace vault \
-    --from-literal=dev-ip="${DEV_IP}" \
-    --from-literal=staging-ip="${STAGING_IP}" \
-    --dry-run=client -o yaml | \
-kubectl apply -f - --context kind-mgmt
-
-success "Cluster IPs injected."
 
 # ==============================================================================
 # CREDENTIALS & ACCESS
