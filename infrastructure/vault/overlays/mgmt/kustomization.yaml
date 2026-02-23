@@ -21,11 +21,31 @@ helmCharts:
           devRootToken: "root" # in prod this is replaced by auto-unseal (AWS KMS)
         resources:
           requests:
-            cpu: 100m
-            memory: 128Mi
+            cpu: 50m
+            memory: 64Mi
           limits:
             cpu: 250m
             memory: 256Mi
+        readinessProbe:
+          exec:
+            command:
+              - /bin/sh
+              - -ec
+              - vault status -tls-skip-verify
+          initialDelaySeconds: 10
+          timeoutSeconds: 10    # increased from 3s
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          exec:
+            command:
+              - /bin/sh
+              - -ec
+              - vault status -tls-skip-verify
+          initialDelaySeconds: 30
+          timeoutSeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3            
       ui:
         enabled: true          # gives you the Vault web UI
       injector:
