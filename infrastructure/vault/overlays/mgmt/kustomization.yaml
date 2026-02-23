@@ -1,0 +1,29 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+helmGlobals:
+  chartHome: /tmp
+
+helmCharts:
+  - name: vault
+    repo: https://helm.releases.hashicorp.com
+    version: 0.28.0
+    releaseName: vault
+    namespace: vault
+    valuesInline:
+      server:
+        dev:
+          enabled: true        # dev mode for local — no unsealing needed
+          devRootToken: "root" # in prod this is replaced by auto-unseal (AWS KMS)
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+      ui:
+        enabled: true          # gives you the Vault web UI
+      injector:
+        enabled: false         # we use ESO not the sidecar injector

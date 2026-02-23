@@ -1,0 +1,138 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init-config
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # runs after Vault pod is up (wave 0)
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: vault-init-sa
+      containers:
+        - name: vault-init
+          image: hashicorp/vault:1.17.0
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault.vault.svc.cluster.local:8200"
+            - name: VAULT_TOKEN
+              value: "root"
+            - name: DEV_CLUSTER_IP
+              valueFrom:
+                secretKeyRef:
+                  name: cluster-ips
+                  key: dev-ip
+            - name: STAGING_CLUSTER_IP
+              valueFrom:
+                secretKeyRef:
+                  name: cluster-ips
+                  key: staging-ip
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              echo "Waiting for Vault to be ready..."
+              until vault status; do sleep 2; done
+
+              echo "Enabling KV secrets engine..."
+              vault secrets enable -path=secret kv-v2 || true
+
+              echo "Writing initial secrets..."
+              vault kv put secret/grafana \
+                admin-user=admin \
+                admin-password=changeme123
+
+              vault kv put secret/argocd \
+                admin-password=changeme123
+
+              echo "Enabling Kubernetes auth for mgmt cluster..."
+              vault auth enable -path=kubernetes/mgmt kubernetes || true
+              vault write auth/kubernetes/mgmt/config \
+                kubernetes_host="https://kubernetes.default.svc.cluster.local:443"
+
+              echo "Enabling Kubernetes auth for dev cluster..."
+              vault auth enable -path=kubernetes/dev kubernetes || true
+              vault write auth/kubernetes/dev/config \
+                kubernetes_host="https://${DEV_CLUSTER_IP}:6443" \
+                insecure_tls=true
+
+              echo "Enabling Kubernetes auth for staging cluster..."
+              vault auth enable -path=kubernetes/staging kubernetes || true
+              vault write auth/kubernetes/staging/config \
+                kubernetes_host="https://${STAGING_CLUSTER_IP}:6443" \
+                insecure_tls=true
+
+              echo "Creating policies..."
+              vault policy write grafana-policy - <<EOF
+              path "secret/data/grafana" {
+                capabilities = ["read"]
+              }
+              EOF
+
+              vault policy write argocd-policy - <<EOF
+              path "secret/data/argocd" {
+                capabilities = ["read"]
+              }
+              EOF
+
+              vault policy write app-policy - <<EOF
+              path "secret/data/apps/*" {
+                capabilities = ["read"]
+              }
+              EOF
+
+              echo "Binding policies to Kubernetes service accounts..."
+              # mgmt cluster — Grafana
+              vault write auth/kubernetes/mgmt/role/grafana \
+                bound_service_account_names=prometheus-grafana \
+                bound_service_account_namespaces=observability \
+                policies=grafana-policy \
+                ttl=1h
+
+              # mgmt cluster — Argo CD
+              vault write auth/kubernetes/mgmt/role/argocd \
+                bound_service_account_names=argocd-server \
+                bound_service_account_namespaces=argocd \
+                policies=argocd-policy \
+                ttl=1h
+
+              # dev cluster — apps
+              vault write auth/kubernetes/dev/role/app \
+                bound_service_account_names=default \
+                bound_service_account_namespaces=podtato-app \
+                policies=app-policy \
+                ttl=1h
+
+              # staging cluster — apps
+              vault write auth/kubernetes/staging/role/app \
+                bound_service_account_names=default \
+                bound_service_account_namespaces=podtato-app \
+                policies=app-policy \
+                ttl=1h
+
+              echo "Vault configuration complete."
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init-sa
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-init-sa-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin   # scope this down in prod
+subjects:
+  - kind: ServiceAccount
+    name: vault-init-sa
+    namespace: vault
