@@ -11,17 +11,25 @@ prometheusOperator:
     enabled: true
 
 grafana:
-  adminPassword: admin
-  ingress:
-    enabled: false
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 
 prometheus:
   prometheusSpec:
     retention: 1d
     resources:
       requests:
-        cpu: 100m
-        memory: 400Mi
+        cpu: 50m
+        memory: 200Mi
       limits:
         cpu: 500m
         memory: 800Mi

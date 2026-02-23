@@ -17,3 +17,6 @@ helmCharts:
     namespace: observability
     valuesFile: values.yaml
     includeCRDs: true        # explicitly render CRDs as part of the manifest
+
+resources:
+  - grafana-external-secret.yaml
