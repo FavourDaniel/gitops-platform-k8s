@@ -1,14 +1,14 @@
----
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: vault-init-config
   namespace: vault
   annotations:
-    argocd.argoproj.io/sync-wave: "1"   # runs after Vault pod is up (wave 0)
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "2"    # runs after Vault is up (wave 0/1)
+  labels:
+    app.kubernetes.io/managed-by: argocd
 spec:
+  ttlSecondsAfterFinished: 300           # clean up 5 mins after completion
   template:
     spec:
       restartPolicy: OnFailure
@@ -69,47 +69,43 @@ spec:
                 insecure_tls=true
 
               echo "Creating policies..."
-              vault policy write grafana-policy - <<EOF
+              vault policy write grafana-policy - <<'EOF'
               path "secret/data/grafana" {
                 capabilities = ["read"]
               }
               EOF
 
-              vault policy write argocd-policy - <<EOF
+              vault policy write argocd-policy - <<'EOF'
               path "secret/data/argocd" {
                 capabilities = ["read"]
               }
               EOF
 
-              vault policy write app-policy - <<EOF
+              vault policy write app-policy - <<'EOF'
               path "secret/data/apps/*" {
                 capabilities = ["read"]
               }
               EOF
 
               echo "Binding policies to Kubernetes service accounts..."
-              # mgmt cluster — Grafana
               vault write auth/kubernetes/mgmt/role/grafana \
                 bound_service_account_names=prometheus-grafana \
                 bound_service_account_namespaces=observability \
                 policies=grafana-policy \
                 ttl=1h
 
-              # mgmt cluster — Argo CD
               vault write auth/kubernetes/mgmt/role/argocd \
                 bound_service_account_names=argocd-server \
                 bound_service_account_namespaces=argocd \
                 policies=argocd-policy \
                 ttl=1h
 
-              # dev cluster — apps
               vault write auth/kubernetes/dev/role/app \
                 bound_service_account_names=default \
                 bound_service_account_namespaces=podtato-app \
                 policies=app-policy \
                 ttl=1h
 
-              # staging cluster — apps
               vault write auth/kubernetes/staging/role/app \
                 bound_service_account_names=default \
                 bound_service_account_namespaces=podtato-app \
@@ -123,15 +119,19 @@ kind: ServiceAccount
 metadata:
   name: vault-init-sa
   namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: vault-init-sa-binding
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cluster-admin   # scope this down in prod
+  name: cluster-admin
 subjects:
   - kind: ServiceAccount
     name: vault-init-sa
