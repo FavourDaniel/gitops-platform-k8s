@@ -20,3 +20,4 @@ helmCharts:
 
 resources:
   - grafana-external-secret.yaml
+  - ../../../external-secrets/overlays/mgmt/cluster-secret-store.yaml
