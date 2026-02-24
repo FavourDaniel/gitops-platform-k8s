@@ -519,6 +519,14 @@ updated bootstrap/infra-appset.yaml
             path: infrastructure/cert-manager/overlays/mgmt
             namespace: cert-manager
             wave: "2"
+
+updated bootstrap/infra-appset.yaml
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true --this was addedd
+
+
 infrastructure/observability/overlays/mgmt/kustomization.yaml
 resources:
   - grafana-external-secret.yaml
@@ -538,3 +546,12 @@ git push origin main
 And add this to your `/etc/hosts` on your Mac: 
 sudo sh -c 'echo "127.0.0.1 grafana.local vault.local argocd.local" >> /etc/hosts'
 Browser → grafana.local:8080 → /etc/hosts resolves to 127.0.0.1 → kubectl port-forward picks it up → Traefik in the cluster → matches HTTPRoute for grafana.local → forwards to prometheus-grafana service → Grafana pod
+
+
+
+
+
+
+commands
+kubectl get apps -n argocd --context kind-mgmt
+kubectl get appset -n argocd --context kind-mgmt
