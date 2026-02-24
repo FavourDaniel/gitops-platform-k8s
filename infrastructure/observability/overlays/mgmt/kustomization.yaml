@@ -29,3 +29,4 @@ helmCharts:
 
 resources:
   - grafana-external-secret.yaml
+  - grafana-httproute.yaml

@@ -4,6 +4,7 @@ kind: Kustomization
 
 resources:
   - vault-config-job.yaml
+  - vault-httproute.yaml
 
 helmGlobals:
   chartHome: /tmp

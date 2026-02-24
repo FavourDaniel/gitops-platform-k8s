@@ -1,0 +1,11 @@
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+  # In production: swap this for an ACME issuer pointing at Let's Encrypt
+  # and change the solver to use DNS01 or HTTP01
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # after cert-manager pods are ready
+spec:
+  selfSigned: {}

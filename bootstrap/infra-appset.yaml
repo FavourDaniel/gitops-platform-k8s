@@ -24,17 +24,29 @@ spec:
   generators:
     - list:
         elements:
+          - name: ingress
+            path: infrastructure/ingress/overlays/mgmt
+            namespace: traefik
+            wave: "1"
+
+          - name: cert-manager
+            path: infrastructure/cert-manager/overlays/mgmt
+            namespace: cert-manager
+            wave: "2"
+
+
           # ----------------------------------------------------------------
-          # Wave 1 — Vault
+          # Wave 3 — Vault
           # Must be healthy before ESO can authenticate against it.
           # ----------------------------------------------------------------
           - name: vault
             path: infrastructure/vault/overlays/mgmt
             namespace: vault
-            wave: "1"
+            wave: "3"
+
 
           # ----------------------------------------------------------------
-          # Wave 2 — External Secrets Operator + ClusterSecretStore
+          # Wave 4 — External Secrets Operator + ClusterSecretStore
           # Argo CD will not start this until vault is Healthy.
           # The ClusterSecretStore lives in this app's kustomization —
           # not in observability — so it is guaranteed to exist before
@@ -44,10 +56,11 @@ spec:
           - name: external-secrets
             path: infrastructure/external-secrets/overlays/mgmt
             namespace: external-secrets
-            wave: "2"
+            wave: "4"
+
 
           # ----------------------------------------------------------------
-          # Wave 3 — Observability (kube-prometheus-stack + Grafana)
+          # Wave 5 — Observability (kube-prometheus-stack + Grafana)
           # Argo CD will not start this until external-secrets is Healthy,
           # meaning ClusterSecretStore is Ready and ESO can reach Vault.
           # Internal sync waves inside this app ensure the Helm chart
@@ -57,7 +70,7 @@ spec:
           - name: observability
             path: infrastructure/observability/overlays/mgmt
             namespace: observability
-            wave: "3"
+            wave: "5"
 
   template:
     metadata:
@@ -99,5 +112,5 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-          - Replace=false
+          # - Replace=false
           - SkipDryRunOnMissingResource=true
