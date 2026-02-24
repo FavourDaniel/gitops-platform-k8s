@@ -4,10 +4,6 @@ kind: Kustomization
 helmGlobals:
   chartHome: /tmp
 
-resources:
-  - gateway-api-rbac.yaml
-  - gateway-api-crds.yaml
-
 helmCharts:
   - name: traefik
     repo: https://helm.traefik.io/traefik
