@@ -4,6 +4,9 @@ kind: Gateway
 metadata:
   name: traefik-gateway
   namespace: traefik
+  annotations:
+    # Tells cert-manager to automatically create a certificate for this Gateway
+    cert-manager.io/cluster-issuer: selfsigned-issuer
 spec:
   gatewayClassName: traefik
   listeners:
@@ -13,3 +16,13 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: websecure
+      protocol: HTTPS
+      port: 8443
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: platform-tls-cert  # Cert-manager will automatically create this Secret

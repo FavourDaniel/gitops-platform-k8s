@@ -555,3 +555,7 @@ Browser → grafana.local:8080 → /etc/hosts resolves to 127.0.0.1 → kubectl 
 commands
 kubectl get apps -n argocd --context kind-mgmt
 kubectl get appset -n argocd --context kind-mgmt
+
+
+
+kind, docker, argocd, podtato app, observability(kube prometheus stack), vault, traefik, cert amaneger

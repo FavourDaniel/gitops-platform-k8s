@@ -107,6 +107,17 @@ kubectl patch configmap argocd-cm -n argocd --context kind-mgmt --type merge \
 # Restart the repo-server so it picks up the updated configmap immediately
 kubectl rollout restart deployment argocd-repo-server -n argocd --context kind-mgmt &>/dev/null
 
+
+info "Configuring Argo CD server (disabling internal TLS for Ingress)..."
+kubectl patch configmap argocd-cmd-params-cm -n argocd --context kind-mgmt --type merge \
+    -p '{"data":{"server.insecure":"true"}}' \
+    &>/dev/null
+
+# Restart the argocd-server so it picks up the insecure flag immediately
+kubectl rollout restart deployment argocd-server -n argocd --context kind-mgmt &>/dev/null
+# ==============================================================================
+
+
 # Wait for Argo CD — if this times out the script fails loudly.
 # This is intentional: a timeout means something is genuinely broken and needs fixing.
 info "Waiting for Argo CD to be ready (timeout: 5m)..."
@@ -275,4 +286,4 @@ echo -e "  ${YELLOW}      Replace with SSO (GitHub OIDC / Okta) before going to 
 echo -e "${BOLD}------------------------------------------------------------${NC}\n"
 
 info "Opening dashboard tunnel (Ctrl+C to disconnect)..."
-kubectl port-forward svc/argocd-server -n argocd 8080:443
+kubectl port-forward svc/argocd-server -n argocd 8080:80
