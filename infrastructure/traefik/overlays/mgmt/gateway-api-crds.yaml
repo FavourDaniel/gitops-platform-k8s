@@ -1,0 +1,27 @@
+---
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+---
+# This is a placeholder — the actual CRDs are applied via a Kustomize remote
+# We use a Job to pre-install Gateway API CRDs before Traefik starts
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: install-gateway-api-crds
+  namespace: traefik
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  template:
+    spec:
+      serviceAccountName: traefik-crd-installer
+      restartPolicy: OnFailure
+      containers:
+        - name: kubectl
+          image: bitnami/kubectl:1.29
+          command:
+            - kubectl
+            - apply
+            - -f
+            - https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml

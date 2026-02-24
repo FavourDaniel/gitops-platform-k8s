@@ -1,9 +1,12 @@
----
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 helmGlobals:
   chartHome: /tmp
+
+resources:
+  - gateway-api-rbac.yaml
+  - gateway-api-crds.yaml
 
 helmCharts:
   - name: traefik
@@ -12,32 +15,23 @@ helmCharts:
     releaseName: traefik
     namespace: traefik
     valuesInline:
-      # Use Gateway API (HTTPRoute) not legacy Ingress
       providers:
         kubernetesIngress:
           enabled: false
         kubernetesGateway:
           enabled: true
-
       gateway:
         enabled: true
         namespace: traefik
-
-      # kind has no LoadBalancer — use NodePort + port-forward
-      # In production (EKS/GKE) change to LoadBalancer
       service:
         type: NodePort
-
       ports:
         web:
           nodePort: 30080
         websecure:
           nodePort: 30443
-
-      # Install Gateway API CRDs
       crds:
         enabled: true
-
       resources:
         requests:
           cpu: 50m
@@ -45,6 +39,3 @@ helmCharts:
         limits:
           cpu: 200m
           memory: 128Mi
-
-resources:
-  - https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
