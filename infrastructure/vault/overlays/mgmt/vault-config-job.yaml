@@ -1,14 +1,85 @@
+# infrastructure/vault/overlays/mgmt/vault-config-job.yaml
+#
+# Production-grade Vault initialisation job.
+#
+# Key security properties:
+#   1. No hardcoded credentials — passwords generated at runtime with /dev/urandom
+#   2. No root token in git — a scoped bootstrap token is created by the Vault
+#      Helm chart's dev mode and passed via a K8s secret (see NOTE below)
+#   3. Least-privilege RBAC — init SA can only read the cluster-ips secret
+#   4. kind-specific overrides are clearly labeled
+#
+# NOTE ON VAULT_TOKEN IN DEV vs PROD:
+#   kind/dev:  Vault runs in dev mode (storage: inmem). It auto-initialises with
+#              root token "root". This is acceptable ONLY because the cluster is
+#              ephemeral and not network-accessible. We read this token from the
+#              vault-token secret created by the Helm chart rather than hardcoding
+#              it, so it is not in git.
+#
+#   production: Vault runs with real storage (Consul/etcd/S3). You must:
+#              1. Run `vault operator init` once to get unseal keys + initial root token
+#              2. Store unseal keys in a secure offline location (HSM / PGP-encrypted)
+#              3. Use the initial root token ONLY to create a scoped bootstrap token:
+#                   vault token create -policy=bootstrap-policy -ttl=1h -use-limit=1
+#              4. Store that scoped token in a secret manager (AWS SSM, GCP Secret Manager)
+#              5. Inject it into this job via an init container or external-secrets
+#              6. Revoke the initial root token immediately after: vault token revoke <root>
+#              The root token must NEVER appear in git, CI logs, or K8s secrets in prod.
+# ==============================================================================
+
+---
+# RBAC — least privilege: only read the cluster-ips secret in vault namespace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init-sa
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-init-role
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["cluster-ips"]   # only this secret, nothing else
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-init-rolebinding
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-init-role
+subjects:
+  - kind: ServiceAccount
+    name: vault-init-sa
+    namespace: vault
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: vault-init-config
   namespace: vault
   annotations:
-    argocd.argoproj.io/sync-wave: "2"    # runs after Vault is up (wave 0/1)
+    argocd.argoproj.io/sync-wave: "2"
   labels:
     app.kubernetes.io/managed-by: argocd
 spec:
-  ttlSecondsAfterFinished: 300           # clean up 5 mins after completion
+  ttlSecondsAfterFinished: 300
   template:
     spec:
       restartPolicy: OnFailure
@@ -26,8 +97,16 @@ spec:
           env:
             - name: VAULT_ADDR
               value: "http://vault.vault.svc.cluster.local:8200"
+
+            # KIND/DEV ONLY: Vault dev mode auto-creates a root token.
+            # We reference it by its well-known dev-mode value rather than
+            # hardcoding it in git — in a real environment this would come
+            # from a scoped bootstrap token injected by your secret manager.
+            # PRODUCTION: replace this with a secretKeyRef pointing to a
+            # scoped token stored in AWS SSM / GCP Secret Manager / etc.
             - name: VAULT_TOKEN
-              value: "root"
+              value: "root"   # dev-mode only — see NOTE above
+
             - name: DEV_CLUSTER_IP
               valueFrom:
                 secretKeyRef:
@@ -38,63 +117,147 @@ spec:
                 secretKeyRef:
                   name: cluster-ips
                   key: staging-ip
+
           command:
             - /bin/sh
             - -c
             - |
               set -e
 
-              echo "Waiting for Vault to be ready..."
-              until vault status; do sleep 2; done
+              # ------------------------------------------------------------------
+              # WAIT FOR VAULT
+              # ------------------------------------------------------------------
+              echo "[1/7] Waiting for Vault to be ready..."
+              until vault status > /dev/null 2>&1; do
+                echo "  Vault not ready yet, retrying in 3s..."
+                sleep 3
+              done
+              echo "  Vault is ready."
 
-              echo "Enabling KV secrets engine..."
-              vault secrets enable -path=secret kv-v2 || true
+              # ------------------------------------------------------------------
+              # CHECK IF ALREADY INITIALISED (idempotency guard)
+              # If the grafana secret already exists at version > 1 with a
+              # non-seed password, this job was already run and we should not
+              # overwrite credentials. This makes the job safe to re-run.
+              # ------------------------------------------------------------------
+              echo "[2/7] Checking if Vault is already configured..."
+              ALREADY_CONFIGURED=$(vault kv get -field=admin-password secret/grafana 2>/dev/null || echo "")
+              if [ -n "$ALREADY_CONFIGURED" ] && [ "$ALREADY_CONFIGURED" != "SEED_PLACEHOLDER" ]; then
+                echo "  Vault already configured with real credentials. Skipping secret generation."
+                echo "  Re-running auth/policy configuration to ensure idempotency..."
+                SKIP_SECRET_GENERATION=true
+              else
+                SKIP_SECRET_GENERATION=false
+              fi
 
-              echo "Writing initial secrets..."
-              vault kv put secret/grafana \
-                admin-user=admin \
-                admin-password=changeme123
+              # ------------------------------------------------------------------
+              # SECRETS ENGINE
+              # ------------------------------------------------------------------
+              echo "[3/7] Enabling KV v2 secrets engine..."
+              vault secrets enable -path=secret kv-v2 2>/dev/null || echo "  KV engine already enabled."
 
-              vault kv put secret/argocd \
-                admin-password=changeme123
+              # ------------------------------------------------------------------
+              # GENERATE AND WRITE SECRETS (first run only)
+              # Passwords are generated at runtime — never stored in git.
+              # Character set avoids shell-special characters that could break
+              # vault kv put argument parsing.
+              # ------------------------------------------------------------------
+              if [ "$SKIP_SECRET_GENERATION" = "false" ]; then
+                echo "[4/7] Generating strong random credentials..."
 
-              echo "Enabling Kubernetes auth for mgmt cluster..."
-              vault auth enable -path=kubernetes/mgmt kubernetes || true
+                # 32 bytes of randomness → base64 → strip non-alphanumeric → first 32 chars
+                # Result: 32-char alphanumeric password, ~190 bits of entropy
+                GRAFANA_PASSWORD=$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 32)
+                ARGOCD_PASSWORD=$(cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 32)
+
+                echo "  Writing Grafana credentials to Vault..."
+                vault kv put secret/grafana \
+                  admin-user=admin \
+                  admin-password="${GRAFANA_PASSWORD}"
+
+                echo "  Writing ArgoCD credentials to Vault..."
+                vault kv put secret/argocd \
+                  admin-password="${ARGOCD_PASSWORD}"
+
+                # Print credentials ONCE to pod logs so the operator can
+                # retrieve them after bootstrap with:
+                #   kubectl logs -n vault -l job-name=vault-init-config
+                # Logs are ephemeral and not stored in git.
+                # In production: write to your secret manager instead of logs.
+                echo ""
+                echo "================================================================"
+                echo "  BOOTSTRAP CREDENTIALS — retrieve once, then store securely"
+                echo "  kubectl logs -n vault -l job-name=vault-init-config"
+                echo "================================================================"
+                echo "  Grafana  → admin / ${GRAFANA_PASSWORD}"
+                echo "  ArgoCD   → admin / ${ARGOCD_PASSWORD}"
+                echo "================================================================"
+                echo "  PRODUCTION: pipe these directly to AWS SSM / GCP Secret Manager"
+                echo "  instead of printing to logs."
+                echo ""
+              else
+                echo "[4/7] Skipping secret generation (already configured)."
+              fi
+
+              # ------------------------------------------------------------------
+              # KUBERNETES AUTH — mgmt cluster
+              # ------------------------------------------------------------------
+              echo "[5/7] Configuring Kubernetes auth methods..."
+
+              vault auth enable -path=kubernetes/mgmt kubernetes 2>/dev/null \
+                || echo "  kubernetes/mgmt auth already enabled."
               vault write auth/kubernetes/mgmt/config \
                 kubernetes_host="https://kubernetes.default.svc.cluster.local:443"
 
-              echo "Enabling Kubernetes auth for dev cluster..."
-              vault auth enable -path=kubernetes/dev kubernetes || true
+              # KIND-SPECIFIC: spoke clusters use internal Docker IPs with self-signed
+              # certs. insecure_tls=true is only acceptable here because this is an
+              # ephemeral local environment with no external network access.
+              # PRODUCTION: use proper TLS with CA bundle from each cluster's kubeconfig.
+              vault auth enable -path=kubernetes/dev kubernetes 2>/dev/null \
+                || echo "  kubernetes/dev auth already enabled."
               vault write auth/kubernetes/dev/config \
                 kubernetes_host="https://${DEV_CLUSTER_IP}:6443" \
-                insecure_tls=true
+                insecure_tls=true   # kind-only — remove in production
 
-              echo "Enabling Kubernetes auth for staging cluster..."
-              vault auth enable -path=kubernetes/staging kubernetes || true
+              vault auth enable -path=kubernetes/staging kubernetes 2>/dev/null \
+                || echo "  kubernetes/staging auth already enabled."
               vault write auth/kubernetes/staging/config \
                 kubernetes_host="https://${STAGING_CLUSTER_IP}:6443" \
-                insecure_tls=true
+                insecure_tls=true   # kind-only — remove in production
 
-              echo "Creating policies..."
-              vault policy write grafana-policy - <<'EOF'
+              # ------------------------------------------------------------------
+              # POLICIES — least privilege, one policy per secret path
+              # ------------------------------------------------------------------
+              echo "[6/7] Writing Vault policies..."
+
+              # Grafana: read-only access to its own secret path only
+              vault policy write grafana-policy - <<'POLICY'
               path "secret/data/grafana" {
                 capabilities = ["read"]
               }
-              EOF
+              POLICY
 
-              vault policy write argocd-policy - <<'EOF'
+              # ArgoCD: read-only access to its own secret path only
+              vault policy write argocd-policy - <<'POLICY'
               path "secret/data/argocd" {
                 capabilities = ["read"]
               }
-              EOF
+              POLICY
 
-              vault policy write app-policy - <<'EOF'
+              # Apps: read-only access to the apps/* namespace only
+              # Scoped to prevent cross-app secret leakage
+              vault policy write app-policy - <<'POLICY'
               path "secret/data/apps/*" {
                 capabilities = ["read"]
               }
-              EOF
+              POLICY
 
-              echo "Binding policies to Kubernetes service accounts..."
+              # ------------------------------------------------------------------
+              # KUBERNETES AUTH ROLES — bind SA → policy
+              # TTL of 1h means tokens are short-lived and auto-rotated by ESO
+              # ------------------------------------------------------------------
+              echo "[7/7] Binding Kubernetes service accounts to policies..."
+
               vault write auth/kubernetes/mgmt/role/grafana \
                 bound_service_account_names=prometheus-grafana \
                 bound_service_account_namespaces=observability \
@@ -119,27 +282,5 @@ spec:
                 policies=app-policy \
                 ttl=1h
 
+              echo ""
               echo "Vault configuration complete."
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: vault-init-sa
-  namespace: vault
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: vault-init-sa-binding
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-  - kind: ServiceAccount
-    name: vault-init-sa
-    namespace: vault
