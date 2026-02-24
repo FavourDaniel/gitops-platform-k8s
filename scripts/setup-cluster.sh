@@ -22,6 +22,8 @@ header()  { echo -e "\n${BOLD}==> $1${NC}"; }
 # Navigate to project root so relative paths work automatically
 cd "$(dirname "$0")/.."
 
+
+
 # ==============================================================================
 # PHASE 1: PRE-FLIGHT CHECKS
 # In production this section is replaced by Terraform outputting a kubeconfig.
@@ -33,6 +35,8 @@ for tool in kind kubectl argocd docker jq; do
 done
 docker info &>/dev/null || error "Docker is not running. Please start Docker."
 success "All dependencies verified."
+
+
 
 # ==============================================================================
 # PHASE 2: CLUSTER PROVISIONING
@@ -49,6 +53,28 @@ for CLUSTER in mgmt dev staging; do
     fi
 done
 success "Clusters are active."
+
+
+
+# ==============================================================================
+# PHASE 2.5: CORE KUBERNETES APIs (GATEWAY API)
+# The Gateway API CRDs must exist before Argo CD attempts to sync any Gateway 
+# or HTTPRoute resources, otherwise Argo's dry-run validation will immediately fail.
+# ==============================================================================
+header "Installing Core APIs (Gateway API)"
+
+GATEWAY_API_VERSION="v1.2.0"
+GATEWAY_API_URL="https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
+
+for CLUSTER in mgmt dev staging; do
+    info "Applying Gateway API CRDs to cluster: $CLUSTER..."
+    # Suppress the massive CRD creation output to keep the logs sleek
+    kubectl apply -f "$GATEWAY_API_URL" --context "kind-${CLUSTER}" &>/dev/null
+done
+
+success "Gateway API CRDs installed on all clusters."
+
+
 
 # ==============================================================================
 # PHASE 3: ARGO CD INSTALLATION
@@ -88,6 +114,8 @@ kubectl wait --for=condition=available --timeout=300s \
     deployment --all -n argocd --context kind-mgmt
 
 success "Control plane operational."
+
+
 
 # ==============================================================================
 # PHASE 4: SPOKE CLUSTER REGISTRATION
@@ -156,6 +184,8 @@ register_cluster() {
 register_cluster "dev" "development"
 register_cluster "staging" "staging"
 
+
+
 # ==============================================================================
 # PHASE 5: TRUST SOURCE REPOSITORY
 # In production: handled by Argo CD's repo-server with SSH keys or a
@@ -167,6 +197,8 @@ REPO_URL=$(git config --get remote.origin.url)
 info "Detected repository: $REPO_URL"
 argocd repo add "$REPO_URL" --core --upsert &>/dev/null
 success "Repository trusted."
+
+
 
 # ==============================================================================
 # PHASE 6: PRE-CREATE NAMESPACES AND INJECT BOOTSTRAP SECRETS
@@ -202,6 +234,8 @@ kubectl create secret generic cluster-ips \
 
 success "Bootstrap secrets injected. Vault init job will find cluster-ips on startup."
 
+
+
 # ==============================================================================
 # PHASE 7: SEED THE GITOPS ENGINE (THE ONLY MANUAL APPLY)
 # We apply exactly ONE file. Argo CD discovers everything else from git.
@@ -218,6 +252,8 @@ kubectl apply -f bootstrap/parent-app.yaml \
     --force-conflicts
 
 success "Platform is now self-managing. Argo CD owns everything from here."
+
+
 
 # ==============================================================================
 # CREDENTIALS & ACCESS
