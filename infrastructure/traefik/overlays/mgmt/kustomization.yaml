@@ -45,3 +45,6 @@ helmCharts:
         limits:
           cpu: 200m
           memory: 128Mi
+
+resources:
+  - https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
