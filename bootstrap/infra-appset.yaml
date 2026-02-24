@@ -24,8 +24,8 @@ spec:
   generators:
     - list:
         elements:
-          - name: ingress
-            path: infrastructure/ingress/overlays/mgmt
+          - name: traefik
+            path: infrastructure/traefik/overlays/mgmt
             namespace: traefik
             wave: "1"
 
