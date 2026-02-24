@@ -4,6 +4,10 @@ kind: Kustomization
 helmGlobals:
   chartHome: /tmp
 
+resources:
+  - gateway.yaml
+  - argocd-httproute.yaml  
+
 helmCharts:
   - name: traefik
     repo: https://helm.traefik.io/traefik
@@ -17,7 +21,7 @@ helmCharts:
         kubernetesGateway:
           enabled: true
       gateway:
-        enabled: true
+        enabled: false
         namespace: traefik
       service:
         type: NodePort
