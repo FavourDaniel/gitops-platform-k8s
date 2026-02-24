@@ -89,6 +89,5 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-          - Force=false
           - Replace=false
           - SkipDryRunOnMissingResource=true
