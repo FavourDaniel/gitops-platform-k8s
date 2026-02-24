@@ -1,3 +1,17 @@
+# bootstrap/infra-appset.yaml
+#
+# Switched from git directory generator to list generator so each app can
+# carry its own sync wave number. The git generator autodiscovers paths but
+# gives every app the same template — you cannot assign per-app waves that way.
+#
+# Wave ordering guarantees the dependency chain automatically for every user
+# who bootstraps from this repo — no manual sync ordering needed:
+#
+#   Wave 1 → vault           (Vault unsealed and ready)
+#   Wave 2 → external-secrets (ESO operator + ClusterSecretStore — needs Vault)
+#   Wave 3 → observability   (Grafana ExternalSecret — needs ClusterSecretStore)
+#
+# Argo CD will not begin a wave until ALL apps in the previous wave are Healthy.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -5,26 +19,63 @@ metadata:
   namespace: argocd
 spec:
   goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
   generators:
-    - git:
-        repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
-        revision: HEAD
-        directories:
-          - path: infrastructure/*
+    - list:
+        elements:
+          # ----------------------------------------------------------------
+          # Wave 1 — Vault
+          # Must be healthy before ESO can authenticate against it.
+          # ----------------------------------------------------------------
+          - name: vault
+            path: infrastructure/vault/overlays/mgmt
+            namespace: vault
+            wave: "1"
+
+          # ----------------------------------------------------------------
+          # Wave 2 — External Secrets Operator + ClusterSecretStore
+          # Argo CD will not start this until vault is Healthy.
+          # The ClusterSecretStore lives in this app's kustomization —
+          # not in observability — so it is guaranteed to exist before
+          # any ExternalSecret attempts to sync. This is the fix that makes
+          # the repo safe for every user, not just the person who ran it first.
+          # ----------------------------------------------------------------
+          - name: external-secrets
+            path: infrastructure/external-secrets/overlays/mgmt
+            namespace: external-secrets
+            wave: "2"
+
+          # ----------------------------------------------------------------
+          # Wave 3 — Observability (kube-prometheus-stack + Grafana)
+          # Argo CD will not start this until external-secrets is Healthy,
+          # meaning ClusterSecretStore is Ready and ESO can reach Vault.
+          # Internal sync waves inside this app ensure the Helm chart
+          # (which creates the prometheus-grafana ServiceAccount) runs at
+          # wave 0 before the ExternalSecret fires at wave 2.
+          # ----------------------------------------------------------------
+          - name: observability
+            path: infrastructure/observability/overlays/mgmt
+            namespace: observability
+            wave: "3"
+
   template:
     metadata:
-      name: 'mgmt-{{ .path.basename }}'
+      name: "mgmt-{{ .name }}"
+      namespace: argocd
       annotations:
-        argocd.argoproj.io/sync-wave: "0"
+        # Argo CD reads this annotation on the Application object itself
+        # to enforce wave gating — not on the resources inside it.
+        argocd.argoproj.io/sync-wave: "{{ .wave }}"
     spec:
       project: default
       source:
         repoURL: https://github.com/FavourDaniel/gitops-platform-k8s.git
         targetRevision: HEAD
-        path: '{{ .path.path }}/overlays/mgmt'
+        path: "{{ .path }}"
       destination:
         server: https://kubernetes.default.svc
-        namespace: '{{ .path.basename }}'
+        namespace: "{{ .namespace }}"
       syncPolicy:
         automated:
           prune: true
@@ -38,6 +89,6 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-          - Force=false         # Explicitly disable Force to allow SSA to work
+          - Force=false
           - Replace=false
           - SkipDryRunOnMissingResource=true

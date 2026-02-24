@@ -1,3 +1,12 @@
+# ClusterSecretStore is intentionally NOT referenced here.
+# It lives in external-secrets/overlays/mgmt/ and is guaranteed to exist
+# by the time this app syncs (wave 3 in infra-appset.yaml).
+#
+# Within this app, sync waves ensure:
+#   Wave 0 (default) — kube-prometheus-stack Helm chart (creates ServiceAccount
+#                       prometheus-grafana that ClusterSecretStore auth uses)
+#   Wave 2           — grafana-external-secret (fires after chart is deployed)
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -20,4 +29,3 @@ helmCharts:
 
 resources:
   - grafana-external-secret.yaml
-  - ../../../external-secrets/overlays/mgmt/cluster-secret-store.yaml

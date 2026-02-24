@@ -13,3 +13,6 @@ helmCharts:
     namespace: external-secrets
     valuesInline:
       installCRDs: true
+
+resources:
+  - cluster-secret-store.yaml
