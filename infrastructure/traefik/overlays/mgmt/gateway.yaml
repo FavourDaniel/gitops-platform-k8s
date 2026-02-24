@@ -17,6 +17,7 @@ spec:
         namespaces:
           from: All
     - name: websecure
+      hostname: "*.local"
       protocol: HTTPS
       port: 8443
       allowedRoutes:
