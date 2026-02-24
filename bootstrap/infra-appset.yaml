@@ -76,6 +76,16 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: "{{ .namespace }}"
+      ignoreDifferences:
+        - kind: Secret
+          name: prometheus-grafana
+          namespace: observability
+          jsonPointers:
+            - /data
+        - group: external-secrets.io
+          kind: ExternalSecret
+          jsonPointers:
+            - /status
       syncPolicy:
         automated:
           prune: true
