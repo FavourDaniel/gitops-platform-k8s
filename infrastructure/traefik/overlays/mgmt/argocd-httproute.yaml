@@ -8,7 +8,6 @@ spec:
   parentRefs:
     - name: traefik-gateway
       namespace: traefik
-      sectionName: websecure
   hostnames:
     - argocd.local
   rules:

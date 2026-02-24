@@ -285,5 +285,5 @@ echo -e "  ${YELLOW}NOTE: Rotate this password immediately in any real environme
 echo -e "  ${YELLOW}      Replace with SSO (GitHub OIDC / Okta) before going to prod.${NC}"
 echo -e "${BOLD}------------------------------------------------------------${NC}\n"
 
-info "Opening dashboard tunnel (Ctrl+C to disconnect)..."
-kubectl port-forward svc/argocd-server -n argocd 8080:80
+# info "Opening dashboard tunnel (Ctrl+C to disconnect)..."
+# kubectl port-forward svc/argocd-server -n argocd 8080:80
